@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abandoned but not Forgotten — NASA's Discarded Equipment</title>
+<meta name="description" content="An interactive museum of NASA hardware left behind on the Moon and Mars. Built for the NASA Space Apps Challenge 2026.">
+<meta name="theme-color" content="#070a11">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='29' fill='%23070a11' stroke='%23e6a95a' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23e6a95a'/%3E%3Ccircle cx='46' cy='20' r='4' fill='%238ecae6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body id="top">
+
+<a class="skip-link" href="#atlas">
+  <span data-lang="en">Skip to the collection</span>
+  <span data-lang="ar">تخطَّ إلى المعرض</span>
+</a>
+
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="#top" aria-label="Abandoned but not Forgotten">
+      <svg class="brand__mark" viewBox="0 0 48 48" aria-hidden="true">
+        <circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <circle cx="24" cy="24" r="9" fill="currentColor" opacity=".9"/>
+        <ellipse cx="24" cy="24" rx="20" ry="7" fill="none" stroke="currentColor" stroke-width="1.1" transform="rotate(-22 24 24)" opacity=".65"/>
+        <circle cx="38" cy="14" r="2.6" fill="currentColor"/>
+      </svg>
+      <span class="brand__text">
+        <strong>Abandoned</strong>
+        <em>but not forgotten</em>
+      </span>
+    </a>
+
+    <nav class="site-nav" aria-label="Sections">
+      <a href="#atlas"><span data-lang="en">Collection</span><span data-lang="ar">المعرض</span></a>
+      <a href="#maps"><span data-lang="en">Maps</span><span data-lang="ar">الخرائط</span></a>
+      <a href="#timeline"><span data-lang="en">Timeline</span><span data-lang="ar">الخط الزمني</span></a>
+      <a href="#stories"><span data-lang="en">Stories</span><span data-lang="ar">الحكايات</span></a>
+      <a href="#about"><span data-lang="en">About</span><span data-lang="ar">عن المشروع</span></a>
+    </nav>
+
+    <button class="lang-toggle" id="langToggle" type="button" aria-label="Switch language">
+      <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+        <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      </svg>
+      <span id="langToggleLabel">العربية</span>
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ HERO ============ -->
+  <section class="hero" aria-labelledby="heroTitle">
+    <div class="hero__bg hero__bg--moon" aria-hidden="true"></div>
+    <div class="hero__bg hero__bg--mars" aria-hidden="true"></div>
+    <div class="hero__fade" aria-hidden="true"></div>
+    <div class="wrap hero__inner">
+      <p class="eyebrow">
+        <span class="dot" aria-hidden="true"></span>
+        <span data-lang="en">NASA Space Apps Challenge 2026 · Storytelling</span>
+        <span data-lang="ar">تحدي ناسا للفضاء ٢٠٢٦ · السرد القصصي</span>
+      </p>
+
+      <h1 id="heroTitle" class="hero__title">
+        <span data-lang="en">Abandoned<br><em>but not forgotten</em></span>
+        <span data-lang="ar">متروكة…<br><em>لكن مش منسية</em></span>
+      </h1>
+
+      <p class="hero__lede">
+        <span data-lang="en">Thirteen artifacts are still out there — on the Moon and on Mars. They finished their missions, went quiet, and stayed. This is their museum.</span>
+        <span data-lang="ar">ثلاث عشرة قطعة معدات لسه هناك — على القمر وعلى المريخ. خلّصت مهامها، سكتت، وبقت مكانها. ده متحفها.</span>
+      </p>
+
+      <div class="hero__actions">
+        <a class="btn btn--primary" href="#atlas">
+          <span data-lang="en">Enter the collection</span>
+          <span data-lang="ar">ادخل المعرض</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </a>
+        <a class="btn btn--ghost" href="#maps">
+          <span data-lang="en">See where they are</span>
+          <span data-lang="ar">شوفهم فين</span>
+        </a>
+      </div>
+
+      <dl class="hero__stats">
+        <div><dt><span data-lang="en">Artifacts</span><span data-lang="ar">قطعة</span></dt><dd>13</dd></div>
+        <div><dt><span data-lang="en">Worlds</span><span data-lang="ar">عالَم</span></dt><dd>02</dd></div>
+        <div><dt><span data-lang="en">Years apart</span><span data-lang="ar">سنة بينهم</span></dt><dd>57</dd></div>
+      </dl>
+    </div>
+
+    <div class="scroll-hint" aria-hidden="true">
+      <span data-lang="en">Scroll</span><span data-lang="ar">اتمرّر</span>
+      <span class="scroll-hint__line"></span>
+    </div>
+  </section>
+
+  <!-- ============ ATLAS ============ -->
+  <section class="section" id="atlas" aria-labelledby="atlasTitle">
+    <div class="wrap">
+      <header class="section__head">
+        <p class="eyebrow"><span>01</span> <span data-lang="en">The Collection</span><span data-lang="ar">المعرض</span></p>
+        <h2 id="atlasTitle">
+          <span data-lang="en">Thirteen things we left behind</span>
+          <span data-lang="ar">١٣ حاجة سيبناها ورانا</span>
+        </h2>
+        <p class="section__lede">
+          <span data-lang="en">Every object here is real, and every object is still in place. Filter by world, or search for a name.</span>
+          <span data-lang="ar">كل قطعة هنا حقيقية، وكلها لسه في مكانها. فلتر بالعالَم، أو دوّر على اسم.</span>
+        </p>
+      </header>
+
+      <div class="toolbar">
+        <div class="toolbar__filters" role="group" aria-label="Filter by world">
+          <button class="chip is-active" type="button" data-filter="all" aria-pressed="true">
+            <span data-lang="en">All</span><span data-lang="ar">الكل</span>
+          </button>
+          <button class="chip" type="button" data-filter="moon" aria-pressed="false">
+            <span class="chip__dot chip__dot--moon" aria-hidden="true"></span>
+            <span data-lang="en">Moon</span><span data-lang="ar">القمر</span>
+          </button>
+          <button class="chip" type="button" data-filter="mars" aria-pressed="false">
+            <span class="chip__dot chip__dot--mars" aria-hidden="true"></span>
+            <span data-lang="en">Mars</span><span data-lang="ar">المريخ</span>
+          </button>
+        </div>
+
+        <label class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="2"/></svg>
+          <span class="sr-only"><span data-lang="en">Search the collection</span><span data-lang="ar">ابحث في المعرض</span></span>
+          <input type="search" id="searchInput" autocomplete="off">
+        </label>
+      </div>
+
+      <p class="result-count" id="resultCount" aria-live="polite"></p>
+
+      <div class="grid" id="atlasGrid"></div>
+
+      <p class="empty" id="emptyState" hidden>
+        <span data-lang="en">Nothing matches that search. Try “rover”, “Viking”, or “Apollo”.</span>
+        <span data-lang="ar">مفيش نتايج للبحث ده. جرّب «روفر» أو «فايكينج» أو «أبولو».</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ MAPS ============ -->
+  <section class="section section--alt" id="maps" aria-labelledby="mapsTitle">
+    <div class="wrap">
+      <header class="section__head">
+        <p class="eyebrow"><span>02</span> <span data-lang="en">Where they are</span><span data-lang="ar">فين هما دلوقتي</span></p>
+        <h2 id="mapsTitle">
+          <span data-lang="en">Two worlds, thirteen quiet addresses</span>
+          <span data-lang="ar">عالَمين، و١٣ عنوان ساكت</span>
+        </h2>
+        <p class="section__lede">
+          <span data-lang="en">Tap a marker to open its story. Positions are approximate and the maps are illustrative — not navigational charts.</span>
+          <span data-lang="ar">اضغط على العلامة تفتح حكايتها. المواقع تقريبية والخرايط توضيحية — مش خرائط ملاحية.</span>
+        </p>
+      </header>
+
+      <div class="map-tabs" role="tablist" aria-label="Choose a world">
+        <button class="map-tab is-active" type="button" role="tab" aria-selected="true" data-map="moon">
+          <span class="chip__dot chip__dot--moon" aria-hidden="true"></span>
+          <span data-lang="en">Moon</span><span data-lang="ar">القمر</span>
+        </button>
+        <button class="map-tab" type="button" role="tab" aria-selected="false" data-map="mars">
+          <span class="chip__dot chip__dot--mars" aria-hidden="true"></span>
+          <span data-lang="en">Mars</span><span data-lang="ar">المريخ</span>
+        </button>
+      </div>
+
+      <div class="map-layout">
+        <div class="map-stage" id="mapStage"></div>
+        <div class="map-side">
+          <h3 class="map-side__title">
+            <span data-lang="en">Sites on this map</span>
+            <span data-lang="ar">المواقع على الخريطة</span>
+          </h3>
+          <ul class="site-list" id="mapSites"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TIMELINE ============ -->
+  <section class="section" id="timeline" aria-labelledby="timelineTitle">
+    <div class="wrap">
+      <header class="section__head">
+        <p class="eyebrow"><span>03</span> <span data-lang="en">Timeline</span><span data-lang="ar">الخط الزمني</span></p>
+        <h2 id="timelineTitle">
+          <span data-lang="en">From first landing to final silence</span>
+          <span data-lang="ar">من أول هبوط لآخر سكوت</span>
+        </h2>
+        <p class="section__lede">
+          <span data-lang="en">The year each machine was left behind — or the year it stopped answering.</span>
+          <span data-lang="ar">السنة اللي كل جهاز اتساب فيها — أو السنة اللي بطّل يرد فيها.</span>
+        </p>
+      </header>
+      <div class="timeline" id="timelineList"></div>
+    </div>
+  </section>
+
+  <!-- ============ STORIES ============ -->
+  <section class="section section--alt" id="stories" aria-labelledby="storiesTitle">
+    <div class="wrap">
+      <header class="section__head">
+        <p class="eyebrow"><span>04</span> <span data-lang="en">Stories</span><span data-lang="ar">الحكايات</span></p>
+        <h2 id="storiesTitle">
+          <span data-lang="en">Four short stories from the surface</span>
+          <span data-lang="ar">أربع حكايات قصيرة من على السطح</span>
+        </h2>
+        <p class="section__lede">
+          <span data-lang="en">Read them in order, or pick the one that catches your eye.</span>
+          <span data-lang="ar">اقرأهم بالترتيب، أو اختار اللي يشدّك.</span>
+        </p>
+      </header>
+
+      <div class="story-nav" id="storyNav" role="tablist" aria-label="Stories"></div>
+      <article class="story" id="storyBody" aria-live="polite"></article>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT ============ -->
+  <section class="section" id="about" aria-labelledby="aboutTitle">
+    <div class="wrap">
+      <header class="section__head">
+        <p class="eyebrow"><span>05</span> <span data-lang="en">About the project</span><span data-lang="ar">عن المشروع</span></p>
+        <h2 id="aboutTitle">
+          <span data-lang="en">Why we built a museum for silent machines</span>
+          <span data-lang="ar">ليه عملنا متحف للأجهزة الساكتة</span>
+        </h2>
+      </header>
+
+      <div class="about-grid">
+        <div class="about-card">
+          <h3><span data-lang="en">The challenge</span><span data-lang="ar">التحدي</span></h3>
+          <p>
+            <span data-lang="en">NASA has left hardware across the solar system since the 1960s. This project answers the Space Apps 2026 storytelling challenge: introduce school-age space fans to that hardware and the science it made possible.</span>
+            <span data-lang="ar">ناسا سابت معدات في كل مكان في النظام الشمسي من الستينيات. المشروع ده بيجاوب على تحدي السرد القصصي في Space Apps 2026: يعرّف الطلبة المهتمين بالفضاء بالمعدات دي والعلم اللي عملته.</span>
+          </p>
+        </div>
+
+        <div class="about-card">
+          <h3><span data-lang="en">Who it is for</span><span data-lang="ar">لمين</span></h3>
+          <p>
+            <span data-lang="en">Written for ages 8–15 and anyone who is curious. Short sentences, no jargon without an explanation, and a story-first structure.</span>
+            <span data-lang="ar">مكتوب لسن ٨–١٥ سنة ولكل فضولي. جمل قصيرة، ومفيش مصطلح من غير شرح، والترتيب بيبدأ بالحكاية.</span>
+          </p>
+        </div>
+
+        <div class="about-card">
+          <h3><span data-lang="en">Accuracy</span><span data-lang="ar">الدقة</span></h3>
+          <p>
+            <span data-lang="en">Facts, dates and coordinates were checked against the NSSDCA and NASA mission pages listed below. The Moon and Mars maps are hand-drawn illustrations, not scale maps.</span>
+            <span data-lang="ar">الحقايق والتواريخ والإحداثيات اتأكدنا منها من صفحات NSSDCA ومهام ناسا اللي تحت. خرايط القمر والمريخ مرسومة توضيحيًا، مش بمقياس رسم.</span>
+          </p>
+        </div>
+
+        <div class="about-card">
+          <h3><span data-lang="en">Accessibility</span><span data-lang="ar">سهولة الوصول</span></h3>
+          <p>
+            <span data-lang="en">Works with a keyboard, screen readers and reduced-motion settings. No audio is required. The whole site runs offline and in both Arabic and English.</span>
+            <span data-lang="ar">شغّال بالكيبورد وقارئات الشاشة وإعداد تقليل الحركة. مفيش صوت إجباري. الموقع كله شغّال أوفلاين وبالعربي والإنجليزي.</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="notes">
+        <h3><span data-lang="en">A note on one famous quote</span><span data-lang="ar">ملاحظة عن جملة مشهورة</span></h3>
+        <p>
+          <span data-lang="en">The line “My battery is low and it’s getting dark,” often attributed to Opportunity, is a paraphrase written by science journalist Jacob Margolis in 2019. The rover’s actual final communication was a flat radio signal, not a sentence.</span>
+          <span data-lang="ar">جملة «بطاريتي ضعيفة والدنيا بتظلم» اللي بتتنسب لـ Opportunity هي صياغة كتبها الصحفي العلمي جيكوب مارجوليس سنة ٢٠١٩. آخر إشارة حقيقية من الروفر كانت موجة راديو مسطّحة، مش جملة.</span>
+        </p>
+      </div>
+
+      <div class="sources">
+        <h3><span data-lang="en">Sources &amp; image credits</span><span data-lang="ar">المصادر وحقوق الصور</span></h3>
+        <ul id="sourceList"></ul>
+        <p class="sources__note">
+          <span data-lang="en">All images are courtesy NASA / JPL-Caltech and are in the public domain. Images were downloaded from NASA’s image library and stored locally in <code>images/</code>.</span>
+          <span data-lang="ar">كل الصور من NASA / JPL-Caltech وهي ملك عام. اتحمّلت من مكتبة صور ناسا واتخزنت محليًا في <code>images/</code>.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap site-footer__inner">
+    <p>
+      <span data-lang="en">Built for the NASA Space Apps Challenge 2026 · Not an official NASA product.</span>
+      <span data-lang="ar">اتعمل لتحدي NASA Space Apps 2026 · مش منتج رسمي لناسا.</span>
+    </p>
+    <a href="#top" class="to-top">
+      <span data-lang="en">Back to top</span><span data-lang="ar">لأعلى الصفحة</span> ↑
+    </a>
+  </div>
+</footer>
+
+<!-- ============ DETAIL DIALOG ============ -->
+<dialog class="dialog" id="artifactDialog" aria-labelledby="dlgTitle">
+  <div class="dialog__shell">
+    <button class="dialog__close" id="dlgClose" type="button" aria-label="Close">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2"/></svg>
+    </button>
+    <div class="dialog__content" id="dlgContent"></div>
+    <div class="dialog__nav">
+      <button class="btn btn--ghost btn--sm" id="dlgPrev" type="button">
+        <span aria-hidden="true">←</span>
+        <span data-lang="en">Previous</span><span data-lang="ar">السابق</span>
+      </button>
+      <button class="btn btn--ghost btn--sm" id="dlgNext" type="button">
+        <span data-lang="en">Next</span><span data-lang="ar">التالي</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<noscript>
+  <div class="noscript">
+    <p>This exhibit needs JavaScript to show the collection. / المعرض محتاج JavaScript عشان يشتغل.</p>
+  </div>
+</noscript>
+
+<script src="script.js"></script>
+</body>
+</html>
