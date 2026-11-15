@@ -83,7 +83,8 @@ challenge’s Resources tab — nothing was added from outside it.
 - **Bilingual interface** — English / Arabic toggle, full RTL layout, choice saved in
   `localStorage`. Every artifact description is written in both languages.
 - **Collection atlas** — filter by world, live search, story-first cards.
-- **Two interactive maps** — an orthographic Moon map and an equirectangular Mars map.
+- **Two real 3D globes** (Moon and Mars) drawn on `<canvas>` with no libraries. Drag in any direction, two-finger twist to roll, wheel or pinch to zoom, Spin / Reset buttons, keyboard: arrows, Q/E, +/−, Space, 0. Click a marker or a list item to open its story.
+- **A 3D model of each of the 13 artifacts** inside its story panel (below the text): drag any direction, pinch/wheel to zoom, Spin, Reset, keyboard controls. Built from simple shapes on `<canvas>`, no libraries; Ingenuity's rotors turn. Simplified illustrations, not official engineering models.
   Every marker is keyboard-focusable and opens the artifact’s story.
 - **Timeline** — grouped by decade, from Surveyor 3 (1967) to Ingenuity’s last flight (2024).
 - **Four short stories** — the laser mirror, Opportunity’s last message, Ingenuity, and
@@ -109,7 +110,7 @@ explained in context, and a narrative-first structure.
 
 - Dates, sites and coordinates were checked against the NSSDCA spacecraft records and the
   NASA mission pages listed below.
-- The Moon and Mars maps are **illustrations, not scale maps**. Marker positions are
+- The Moon and Mars globes are **stylised 3D drawings with a generated surface, not scale maps or real imagery**. Marker positions are
   approximate; two markers on the Moon (Apollo 12 / Surveyor 3) are nudged apart so both
   remain clickable.
 - The quote *“My battery is low and it’s getting dark”* attributed to Opportunity is a

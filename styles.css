@@ -369,20 +369,7 @@ html[dir="rtl"] .card:hover .card__cta span:last-child { transform: scaleX(-1) t
 .map-stage {
   position: relative; border: 1px solid var(--line); border-radius: var(--radius);
   background: radial-gradient(120% 120% at 50% 0%, #0d1524, #060910 70%);
-  padding: 1.2rem; overflow: hidden;
-}
-.map-stage svg { width: 100%; height: auto; }
-.map-stage .moon-disk { filter: drop-shadow(0 0 40px rgba(142, 202, 230, .12)); }
-.map-stage text { font-family: var(--font-sans); }
-.map-stage .map-label {
-  font-family: var(--font-mono); font-size: 9px; letter-spacing: .18em;
-  text-transform: uppercase; fill: var(--faint);
-}
-.map-stage .map-note { font-size: 9px; fill: var(--faint); }
-.marker__num {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
-  fill: var(--amber); pointer-events: none;
-  paint-order: stroke; stroke: #070a11; stroke-width: 2.5px;
+  aspect-ratio: 1; width: 100%; max-width: 640px; margin-inline: auto; overflow: hidden;
 }
 .media--missing {
   background:
@@ -390,16 +377,24 @@ html[dir="rtl"] .card:hover .card__cta span:last-child { transform: scaleX(-1) t
     radial-gradient(80% 80% at 50% 40%, #1b2432, #0a0f18);
 }
 
-.marker { cursor: pointer; }
-.marker__hit { fill: transparent; }
-.marker__ring { fill: none; stroke: var(--amber); stroke-width: 1; opacity: 0; }
-.marker__dot { fill: var(--amber); stroke: #070a11; stroke-width: 2; transition: r .2s; }
-.marker__core { fill: #1a1206; }
-.marker:hover .marker__dot, .marker:focus-visible .marker__dot { r: 9; }
-.marker:hover .marker__ring, .marker:focus-visible .marker__ring { opacity: 1; animation: ping 1.6s infinite; }
-.marker:focus { outline: none; }
-.marker:focus-visible .marker__hit { stroke: var(--amber); stroke-width: 1.5; }
-@keyframes ping { 0% { r: 8; opacity: .8; } 100% { r: 22; opacity: 0; } }
+.globe__px, .globe__ov { position: absolute; inset: 0; width: 100%; height: 100%; }
+.globe__px { filter: drop-shadow(0 0 40px rgba(142, 202, 230, .12)); pointer-events: none; }
+.map-stage[data-world="mars"] .globe__px { filter: drop-shadow(0 0 40px rgba(224, 121, 74, .16)); }
+.globe__ov { touch-action: none; cursor: grab; border-radius: var(--radius); }
+.globe__ov.is-grabbing { cursor: grabbing; }
+.globe__ov:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.globe__hint {
+  position: absolute; inset-block-start: .8rem; inset-inline: 1rem; margin: 0; pointer-events: none;
+  font-family: var(--font-mono); font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--faint);
+}
+.globe__ui { position: absolute; inset-block-end: .8rem; inset-inline-end: .8rem; display: flex; gap: .4rem; }
+.globe__ui button {
+  min-width: 2.4rem; height: 2.4rem; padding: 0 .8rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: rgba(7, 10, 17, .78); color: var(--ink); font: inherit; font-size: .85rem;
+  backdrop-filter: blur(6px);
+}
+.globe__ui button:hover, .globe__ui button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+.globe__ui button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
 .map-side { padding: 1.15rem 1.2rem; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255, 255, 255, .02); }
 .map-side__title { font-size: 1rem; margin-block-end: .9rem; }
@@ -676,3 +671,22 @@ html[lang="ar"] .dlg-fact strong { letter-spacing: 0; font-size: .76rem; }
   .hero__bg { transform: none; }
 }
  
+
+/* 3D equipment model inside the artifact dialog */
+.dlg-model { margin-block: 1.4rem; }
+.dlg-model h4 { margin-block-end: .6rem; }
+.model-stage {
+  position: relative; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  background: radial-gradient(120% 120% at 50% 0%, #0d1524, #060910 70%);
+}
+#modelCanvas { display: block; width: 100%; height: min(360px, 62vw); touch-action: none; cursor: grab; }
+#modelCanvas:active { cursor: grabbing; }
+#modelCanvas:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.model-ui { position: absolute; inset-block-end: .6rem; inset-inline-end: .6rem; display: flex; gap: .35rem; }
+.model-ui button {
+  min-width: 2.2rem; height: 2.2rem; padding: 0 .7rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: rgba(7, 10, 17, .78); color: var(--ink); font: inherit; font-size: .8rem;
+}
+.model-ui button:hover, .model-ui button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+.model-ui button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.model-note { margin: .5rem 0 0; font-size: .8rem; color: var(--faint); }

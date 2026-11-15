@@ -779,136 +779,294 @@ function initStars() {
 }
 
 /* --------------------------------------------------------------------------
-   Maps
+   Maps — two real 3D globes drawn on <canvas>. No libraries, no network.
+   Surfaces are procedurally generated (stylised, not NASA imagery);
+   marker positions use the coordinates stored with each artifact.
    -------------------------------------------------------------------------- */
-const M = { size: 640, c: 320, r: 288, w: 900, h: 460 };
+const M = { size: window.innerWidth < 600 ? 320 : 400, tw: 720, th: 360 };
 
-/* Visual nudges only — keeps crowded markers apart. Not geography. */
-const NUDGE = {
-  surveyor: { dx: -13, dy: 9 },
-  sojourner: { dx: 0, dy: 18 }
+/* Visual nudges in screen pixels — keeps crowded markers apart. Not geography. */
+const NUDGE = { surveyor: { dx: -13, dy: 9 }, sojourner: { dx: 0, dy: 18 } };
+
+const D2R = Math.PI / 180;
+const vec = (la, lo) => [Math.cos(la * D2R) * Math.sin(lo * D2R), Math.sin(la * D2R), Math.cos(la * D2R) * Math.cos(lo * D2R)];
+
+/* 3x3 row-major matrices: view = R · body */
+const mmul = (a, b) => [
+  a[0]*b[0]+a[1]*b[3]+a[2]*b[6], a[0]*b[1]+a[1]*b[4]+a[2]*b[7], a[0]*b[2]+a[1]*b[5]+a[2]*b[8],
+  a[3]*b[0]+a[4]*b[3]+a[5]*b[6], a[3]*b[1]+a[4]*b[4]+a[5]*b[7], a[3]*b[2]+a[4]*b[5]+a[5]*b[8],
+  a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8]];
+const rotX = (a) => { const c = Math.cos(a), s = Math.sin(a); return [1,0,0, 0,c,-s, 0,s,c]; };
+const rotY = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c,0,s, 0,1,0, -s,0,c]; };
+const rotZ = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c,-s,0, s,c,0, 0,0,1]; };
+function orthonormal(m) {
+  let x = [m[0], m[1], m[2]], y = [m[3], m[4], m[5]];
+  const n = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; };
+  x = n(x);
+  const d = x[0]*y[0] + x[1]*y[1] + x[2]*y[2];
+  y = n([y[0]-d*x[0], y[1]-d*x[1], y[2]-d*x[2]]);
+  return [...x, ...y, x[1]*y[2]-x[2]*y[1], x[2]*y[0]-x[0]*y[2], x[0]*y[1]-x[1]*y[0]];
+}
+
+/* --- procedural surface -------------------------------------------------- */
+function hash3(x, y, z) { const h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return h - Math.floor(h); }
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const u = (x-xi)**2 * (3-2*(x-xi)), v = (y-yi)**2 * (3-2*(y-yi)), w = (z-zi)**2 * (3-2*(z-zi));
+  const l = (a, b, t) => a + (b - a) * t;
+  return l(
+    l(l(hash3(xi,yi,zi), hash3(xi+1,yi,zi), u), l(hash3(xi,yi+1,zi), hash3(xi+1,yi+1,zi), u), v),
+    l(l(hash3(xi,yi,zi+1), hash3(xi+1,yi,zi+1), u), l(hash3(xi,yi+1,zi+1), hash3(xi+1,yi+1,zi+1), u), v), w);
+}
+function fbm(x, y, z, o) { let s = 0, a = .5, f = 1; for (let i = 0; i < o; i++) { s += a * vnoise(x*f, y*f, z*f); f *= 2.03; a *= .5; } return s; }
+const feat = (la, lo, r) => ({ c: vec(la, lo), r, cr: Math.cos(r * D2R) });
+function amount(p, f) {
+  const dt = p[0]*f.c[0] + p[1]*f.c[1] + p[2]*f.c[2];
+  if (dt <= f.cr) return 0;
+  const t = 1 - Math.acos(Math.min(1, dt)) / (f.r * D2R);
+  return t * t * (3 - 2 * t);
+}
+
+const MARIA = [feat(32.8,-15.6,17), feat(28,17.5,10), feat(8.5,31.4,11), feat(-7.8,51.3,10), feat(17,59.1,8), feat(-21,-16.6,10), feat(-24.4,-38.6,8),
+  feat(18.4,-57.4,27), feat(56,1,13), feat(-15.2,35.5,6), feat(13.3,3.6,8), feat(-10.5,-23.1,6), feat(-19.4,-92.8,7), feat(27,147,5)];
+const MOON_CRATERS = [feat(-43.3,-11.4,3.5), feat(9.6,-20.1,3), feat(8.1,-38,2.6), feat(-47.5,-110,5), feat(-57,2,5)];
+const VALLES = [[-9,-85],[-10,-78],[-11,-70],[-12,-62],[-10,-55],[-8,-48]].map(([la, lo]) => feat(la, lo, 4));
+const MARS_DARK = [feat(8.4,69.5,13), feat(46.7,-22,16), feat(-20,145,16), feat(-35,-155,15), feat(-5,-10,9), feat(-25,-85,11), ...VALLES];
+const MARS_BRIGHT = [feat(-42,70,10), feat(-50,-43,7), feat(1,-110,22), feat(18.6,-133.8,6), feat(-8,-110,10)];
+
+function genTexture(world) {
+  const { tw, th } = M, data = new Uint8ClampedArray(tw * th * 3);
+  const moon = world === 'moon';
+  for (let y = 0; y < th; y++) {
+    const la = 90 - (y + .5) * 180 / th;
+    for (let x = 0; x < tw; x++) {
+      const p = vec(la, -180 + (x + .5) * 360 / tw);
+      const n = fbm(p[0]*5 + 9, p[1]*5 + 9, p[2]*5 + 9, 5), i = (y * tw + x) * 3;
+      let r, g, b;
+      if (moon) {
+        let v = .64 + (n - .5) * .30, dark = 0;
+        for (const f of MARIA) dark = Math.max(dark, amount(p, f));
+        v -= dark * (.30 + (n - .5) * .12);
+        for (const f of MOON_CRATERS) { const a = amount(p, f); if (a > 0) v += a * .12; }
+        v += (vnoise(p[0]*30, p[1]*30, p[2]*30) - .5) * .10 + (vnoise(p[0]*90, p[1]*90, p[2]*90) - .5) * .06;
+        r = v * 255; g = v * 252; b = v * 246;
+      } else {
+        let k = .55 + (n - .5) * .9, dark = 0, bright = 0;
+        for (const f of MARS_DARK) dark = Math.max(dark, amount(p, f));
+        for (const f of MARS_BRIGHT) bright = Math.max(bright, amount(p, f));
+        r = 196 * k + 40; g = 104 * k + 26; b = 62 * k + 18;
+        r += (110 - r) * dark * .8; g += (62 - g) * dark * .8; b += (48 - b) * dark * .8;
+        r += (236 - r) * bright * .35; g += (170 - g) * bright * .35; b += (130 - b) * bright * .35;
+        const cap = Math.abs(la) - (82 - (n - .5) * 8);
+        if (cap > 0) { const c = Math.min(1, cap / 2); r += (240 - r) * c; g += (238 - g) * c; b += (236 - b) * c; }
+      }
+      data[i] = r; data[i + 1] = g; data[i + 2] = b;
+    }
+  }
+  return data;
+}
+
+/* --- the globe ----------------------------------------------------------- */
+const globeReduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const G = {
+  built: false, world: null, R: [1,0,0, 0,1,0, 0,0,1], zoom: 1, spin: !globeReduce,
+  vx: 0, vy: 0, down: false, visible: true, raf: 0, last: 0, hover: null, pts: [], tex: {}, anim: null,
+  dpr: Math.min(window.devicePixelRatio || 1, 2)
 };
+const START = { moon: [0, 0], mars: [12, -35] };
 
-function projectMoon(lat, lon) {
-  const la = (lat * Math.PI) / 180;
-  const lo = (lon * Math.PI) / 180;
-  const x = Math.cos(la) * Math.sin(lo);
-  const y = Math.sin(la);
-  return { x: M.c + M.r * x, y: M.c - M.r * y };
+function aim(la, lo) { return mmul(rotX(la * D2R), rotY(-lo * D2R)); }
+function rotate(ty, tx, tz) { G.R = orthonormal(mmul(mmul(rotX(tx), mmul(rotY(ty), rotZ(tz || 0))), G.R)); }
+function wake() { if (!G.raf && G.visible) G.raf = requestAnimationFrame(tick); }
+const radiusPx = () => G.ov.getBoundingClientRect().width * .42 * G.zoom;
+
+function paintGlobe() {
+  const S = M.size, d = G.img.data, R = G.R, c = S / 2, rad = S * .42 * G.zoom;
+  const td = G.tex[G.world], tw = M.tw, th = M.th, moon = G.world === 'moon';
+  const rim = moon ? [120, 160, 220] : [255, 140, 90];
+  for (let y = 0; y < S; y++) {
+    const ny = -(y - c) / rad;
+    for (let x = 0; x < S; x++) {
+      const nx = (x - c) / rad, q = nx * nx + ny * ny, idx = (y * S + x) * 4;
+      if (q >= 1) { d[idx + 3] = 0; continue; }
+      const nz = Math.sqrt(1 - q);
+      const bx = R[0]*nx + R[3]*ny + R[6]*nz, by = R[1]*nx + R[4]*ny + R[7]*nz, bz = R[2]*nx + R[5]*ny + R[8]*nz;
+      let u = ((Math.atan2(bx, bz) + Math.PI) * .15915494 * tw) | 0, v = ((1.5707963 - Math.asin(by < -1 ? -1 : by > 1 ? 1 : by)) * .31830989 * th) | 0;
+      if (u >= tw) u = tw - 1; if (v >= th) v = th - 1;
+      const ti = (v * tw + u) * 3, lit = Math.max(0, -.45 * nx + .5 * ny + .74 * nz), sh = .3 + .85 * lit, rm = Math.pow(1 - nz, 4) * .28;
+      d[idx]     = td[ti]     * sh + rim[0] * rm;
+      d[idx + 1] = td[ti + 1] * sh + rim[1] * rm;
+      d[idx + 2] = td[ti + 2] * sh + rim[2] * rm;
+      d[idx + 3] = q > .985 ? (1 - q) / .015 * 255 : 255;
+    }
+  }
+  G.pxc.putImageData(G.img, 0, 0);
 }
 
-function projectMars(lat, lon) {
-  return {
-    x: ((lon + 180) / 360) * M.w,
-    y: ((90 - lat) / 180) * M.h
+function project(v) {
+  const R = G.R;
+  return [R[0]*v[0] + R[1]*v[1] + R[2]*v[2], R[3]*v[0] + R[4]*v[1] + R[5]*v[2], R[6]*v[0] + R[7]*v[1] + R[8]*v[2]];
+}
+
+function paintOverlay() {
+  const ctx = G.ovx, W = G.ov.width, rr = W * .42 * G.zoom, c = W / 2, k = G.dpr;
+  ctx.clearRect(0, 0, W, W);
+  ctx.lineWidth = k; ctx.strokeStyle = 'rgba(255,255,255,.10)';
+  const line = (pts) => {
+    ctx.beginPath(); let on = false;
+    for (const p of pts) {
+      const s = project(p);
+      if (s[2] > 0) { const X = c + s[0] * rr, Y = c - s[1] * rr; on ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); on = true; } else on = false;
+    }
+    ctx.stroke();
   };
+  for (let lo = -180; lo < 180; lo += 30) { const a = []; for (let la = -90; la <= 90; la += 6) a.push(vec(la, lo)); line(a); }
+  for (let la = -60; la <= 60; la += 30) { const a = []; for (let lo = -180; lo <= 180; lo += 6) a.push(vec(la, lo)); line(a); }
+
+  const amber = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e6a95a';
+  G.pts = [];
+  ARTIFACTS.filter((a) => a.world === G.world).forEach((a, i) => {
+    const s = project(vec(a.coords.lat, a.coords.lon));
+    if (s[2] < .02) return;
+    const n = NUDGE[a.id] || { dx: 0, dy: 0 };
+    const X = c + s[0] * rr + n.dx * k, Y = c - s[1] * rr + n.dy * k, al = Math.min(1, s[2] / .3);
+    G.pts.push({ id: a.id, X, Y, a });
+    const hot = G.hover === a.id;
+    ctx.globalAlpha = al;
+    ctx.beginPath(); ctx.arc(X, Y, (hot ? 13 : 9) * k, 0, 7); ctx.strokeStyle = amber; ctx.lineWidth = k; ctx.stroke();
+    ctx.beginPath(); ctx.arc(X, Y, (hot ? 8.5 : 6.5) * k, 0, 7); ctx.fillStyle = amber; ctx.fill();
+    ctx.lineWidth = 2 * k; ctx.strokeStyle = '#070a11'; ctx.stroke();
+    ctx.font = `700 ${10 * k}px ui-monospace, monospace`; ctx.textAlign = 'center';
+    ctx.lineWidth = 2.5 * k; ctx.strokeText(i + 1, X, Y - 14 * k); ctx.fillStyle = amber; ctx.fillText(i + 1, X, Y - 14 * k);
+    ctx.globalAlpha = 1;
+    if (hot) {
+      const name = t(a.name); ctx.font = `600 ${12 * k}px system-ui, sans-serif`;
+      const w = ctx.measureText(name).width + 16 * k, bx = Math.min(W - w - 4, Math.max(4, X - w / 2)), by = Y + 18 * k;
+      ctx.fillStyle = 'rgba(7,10,17,.92)'; ctx.beginPath(); ctx.roundRect(bx, by, w, 24 * k, 8 * k); ctx.fill();
+      ctx.fillStyle = '#eef1f6'; ctx.fillText(name, bx + w / 2, by + 16 * k);
+    }
+  });
 }
 
-function markerHTML(a, index, point) {
-  const n = NUDGE[a.id] || { dx: 0, dy: 0 };
-  const x = point.x + n.dx;
-  const y = point.y + n.dy;
-  const label = t(a.name);
-  return `
-    <g class="marker" data-id="${a.id}" tabindex="0" role="button"
-      aria-label="${esc(label)} — ${esc(t(a.site))}">
-      <title>${esc(label)}</title>
-      <circle class="marker__hit" cx="${x}" cy="${y}" r="22"></circle>
-      <circle class="marker__ring" cx="${x}" cy="${y}" r="9"></circle>
-      <circle class="marker__dot" cx="${x}" cy="${y}" r="6.5"></circle>
-      <text class="marker__num" x="${x}" y="${y - 14}" text-anchor="middle">${index + 1}</text>
-    </g>`;
-}
-
-function moonSVG() {
-  const items = ARTIFACTS.filter((a) => a.world === 'moon');
-  const markers = items.map((a, i) => markerHTML(a, i, projectMoon(a.coords.lat, a.coords.lon))).join('');
-  const label = state.lang === 'ar' ? 'خريطة توضيحية للوجه القريب من القمر' : 'Illustrative map of the Moon’s near side';
-
-  const maria = [
-    [235, 200, 72, 62], [150, 300, 74, 96], [352, 208, 50, 46],
-    [402, 256, 56, 44], [476, 212, 30, 40], [438, 306, 44, 36],
-    [288, 372, 46, 34], [236, 392, 35, 30], [330, 266, 26, 22]
-  ].map(([cx, cy, rx, ry]) => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="rgba(8, 13, 22, .55)"/>`).join('');
-
-  const craters = [[280, 518, 9], [300, 330, 6], [388, 372, 7], [250, 300, 5], [420, 340, 4]]
-    .map(([cx, cy, r]) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="1.2"/>`).join('');
-
-  return `
-  <svg viewBox="0 0 640 640" role="img" aria-label="${esc(label)}">
-    <defs>
-      <radialGradient id="moonFill" cx="38%" cy="32%" r="78%">
-        <stop offset="0%" stop-color="#2b3648"/>
-        <stop offset="58%" stop-color="#18202e"/>
-        <stop offset="100%" stop-color="#0a0f19"/>
-      </radialGradient>
-      <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
-        <stop offset="70%" stop-color="rgba(142, 202, 230, .10)"/>
-        <stop offset="100%" stop-color="rgba(142, 202, 230, 0)"/>
-      </radialGradient>
-    </defs>
-    <circle cx="320" cy="320" r="312" fill="url(#moonGlow)"/>
-    <circle class="moon-disk" cx="320" cy="320" r="288" fill="url(#moonFill)" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
-    <g clip-path="circle(288px at 320px 320px)">
-      ${maria}
-      ${craters}
-    </g>
-    <text class="map-label" x="320" y="616" text-anchor="middle">${state.lang === 'ar' ? 'الوجه القريب · رسم توضيحي' : 'Near side · illustrative'}</text>
-    ${markers}
-  </svg>`;
-}
-
-function marsSVG() {
-  const items = ARTIFACTS.filter((a) => a.world === 'mars');
-  const markers = items.map((a, i) => markerHTML(a, i, projectMars(a.coords.lat, a.coords.lon))).join('');
-  const label = state.lang === 'ar' ? 'خريطة توضيحية لكوكب المريخ' : 'Illustrative map of Mars';
-
-  let grid = '';
-  for (let lon = -150; lon <= 150; lon += 60) {
-    const x = ((lon + 180) / 360) * M.w;
-    grid += `<line x1="${x}" y1="0" x2="${x}" y2="${M.h}" stroke="rgba(255,255,255,.06)" stroke-width="1"/>`;
+function tick(ts) {
+  G.raf = 0;
+  if (!G.visible) return;
+  const dt = Math.min(.05, (ts - G.last) / 1000 || .016); G.last = ts;
+  let busy = false;
+  if (G.anim) {
+    G.anim.t = Math.min(1, G.anim.t + dt / .9);
+    const e = G.anim.t * G.anim.t * (3 - 2 * G.anim.t);
+    G.R = orthonormal(G.anim.from.map((v, i) => v + (G.anim.to[i] - v) * e));
+    if (G.anim.t >= 1) G.anim = null; else busy = true;
+  } else if (!G.down) {
+    if (Math.abs(G.vx) + Math.abs(G.vy) > .0004) { rotate(G.vx, G.vy); G.vx *= .94; G.vy *= .94; busy = true; }
+    else if (G.spin) { rotate(.35 * dt, 0); busy = true; }
   }
-  for (let lat = -60; lat <= 60; lat += 30) {
-    const y = ((90 - lat) / 180) * M.h;
-    grid += `<line x1="0" y1="${y}" x2="${M.w}" y2="${y}" stroke="rgba(255,255,255,.06)" stroke-width="1"/>`;
-  }
+  paintGlobe(); paintOverlay();
+  if (busy) wake();
+}
 
-  const vm = [[350, 243], [312, 250], [275, 258], [237, 264], [200, 267]]
-    .map(([x, y], i) => (i === 0 ? 'M' : 'L') + x + ' ' + y).join(' ');
+function hitTest(e) {
+  const r = G.ov.getBoundingClientRect(), s = G.ov.width / r.width;
+  const X = (e.clientX - r.left) * s, Y = (e.clientY - r.top) * s;
+  let best = null, bd = (22 * G.dpr) ** 2;
+  for (const p of G.pts) { const d = (p.X - X) ** 2 + (p.Y - Y) ** 2; if (d < bd) { bd = d; best = p; } }
+  return best;
+}
 
-  return `
-  <svg viewBox="0 0 900 460" role="img" aria-label="${esc(label)}">
-    <defs>
-      <linearGradient id="marsFill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#2c1a15"/>
-        <stop offset="46%" stop-color="#3a2119"/>
-        <stop offset="100%" stop-color="#1d110e"/>
-      </linearGradient>
-      <radialGradient id="marsGlow" cx="50%" cy="50%" r="60%">
-        <stop offset="60%" stop-color="rgba(224, 121, 74, .08)"/>
-        <stop offset="100%" stop-color="rgba(224, 121, 74, 0)"/>
-      </radialGradient>
-    </defs>
-    <rect width="${M.w}" height="${M.h}" fill="url(#marsGlow)"/>
-    <rect x="1" y="1" width="${M.w - 2}" height="${M.h - 2}" rx="14" fill="url(#marsFill)" stroke="rgba(255,255,255,.12)"/>
-    <g clip-path="inset(2px round 12px)">
-      <path d="${vm}" fill="none" stroke="rgba(120, 58, 40, .55)" stroke-width="7" stroke-linecap="round"/>
-      <ellipse cx="626" cy="338" rx="52" ry="34" fill="rgba(10, 6, 5, .35)"/>
-      <ellipse cx="520" cy="130" rx="60" ry="40" fill="rgba(255, 190, 140, .035)"/>
-      <ellipse cx="180" cy="300" rx="70" ry="44" fill="rgba(255, 190, 140, .03)"/>
-      <circle cx="116" cy="182" r="26" fill="none" stroke="rgba(255, 160, 110, .16)" stroke-width="1.5"/>
-      <circle cx="116" cy="182" r="12" fill="rgba(255, 160, 110, .07)"/>
-      ${grid}
-    </g>
-    <text class="map-label" x="20" y="30">${state.lang === 'ar' ? 'المريخ · رسم توضيحي' : 'Mars · illustrative'}</text>
-    <text class="map-label" x="${M.w - 20}" y="${M.h - 16}" text-anchor="end">${state.lang === 'ar' ? 'مش بمقياس رسم' : 'Not to scale'}</text>
-    ${markers}
-  </svg>`;
+function setZoom(z) { G.zoom = Math.max(.7, Math.min(3, z)); wake(); }
+function resetGlobe() { const s = START[G.world]; G.anim = { from: G.R.slice(), to: aim(s[0], s[1]), t: 0 }; G.zoom = 1; G.vx = G.vy = 0; wake(); }
+function focusArtifact(id) {
+  const a = ARTIFACTS.find((x) => x.id === id);
+  if (!a || a.world !== G.world || !G.built) return;
+  G.anim = { from: G.R.slice(), to: aim(a.coords.lat, a.coords.lon), t: 0 }; G.vx = G.vy = 0; wake();
+}
+
+function buildGlobe(stage) {
+  stage.innerHTML = `
+    <canvas class="globe__px" width="${M.size}" height="${M.size}" aria-hidden="true"></canvas>
+    <canvas class="globe__ov" tabindex="0" role="application"></canvas>
+    <p class="globe__hint"></p>
+    <div class="globe__ui" role="group">
+      <button type="button" data-g="spin" aria-pressed="${G.spin}"></button>
+      <button type="button" data-g="in">+</button>
+      <button type="button" data-g="out">−</button>
+      <button type="button" data-g="reset"></button>
+    </div>`;
+  G.px = stage.querySelector('.globe__px'); G.ov = stage.querySelector('.globe__ov');
+  G.pxc = G.px.getContext('2d'); G.ovx = G.ov.getContext('2d'); G.img = G.pxc.createImageData(M.size, M.size);
+
+  const fit = () => { const w = Math.round(G.ov.getBoundingClientRect().width * G.dpr) || M.size; if (G.ov.width !== w) { G.ov.width = G.ov.height = w; } wake(); };
+  new ResizeObserver(fit).observe(G.ov); fit();
+  new IntersectionObserver((en) => { G.visible = en[0].isIntersecting; if (G.visible) wake(); }).observe(stage);
+
+  const ptr = new Map(); let moved = 0, prev = null;
+  const pair = () => { const [a, b] = [...ptr.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x) }; };
+  G.ov.addEventListener('pointerdown', (e) => {
+    G.ov.setPointerCapture(e.pointerId); ptr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    G.down = true; G.anim = null; G.vx = G.vy = 0; moved = 0; G.ov.classList.add('is-grabbing');
+    prev = ptr.size === 2 ? pair() : null;
+  });
+  G.ov.addEventListener('pointermove', (e) => {
+    const p = ptr.get(e.pointerId);
+    if (!p) { const h = hitTest(e), id = h ? h.id : null; if (id !== G.hover) { G.hover = id; G.ov.style.cursor = id ? 'pointer' : ''; wake(); paintOverlay(); } return; }
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+    if (ptr.size === 1) { const r = radiusPx(); G.vx = dx / r; G.vy = dy / r; rotate(G.vx, G.vy); }
+    else if (ptr.size === 2) { const n = pair(); if (prev) { setZoom(G.zoom * n.d / prev.d); rotate(0, 0, -(n.ang - prev.ang)); } prev = n; }
+    wake();
+  });
+  const end = (e) => {
+    const was = ptr.has(e.pointerId); ptr.delete(e.pointerId); prev = null;
+    if (!ptr.size) { G.down = false; G.ov.classList.remove('is-grabbing'); if (globeReduce) G.vx = G.vy = 0;
+      if (was && e.type === 'pointerup' && moved < 6) { const h = hitTest(e); if (h) openArtifact(h.id); } }
+    wake();
+  };
+  G.ov.addEventListener('pointerup', end); G.ov.addEventListener('pointercancel', end);
+  G.ov.addEventListener('pointerleave', () => { if (G.hover) { G.hover = null; wake(); } });
+  G.ov.addEventListener('wheel', (e) => { e.preventDefault(); setZoom(G.zoom * Math.exp(-e.deltaY * .0015)); }, { passive: false });
+  G.ov.addEventListener('keydown', (e) => {
+    const k = e.key, s = .14;
+    if (k === 'ArrowLeft') rotate(-s, 0); else if (k === 'ArrowRight') rotate(s, 0);
+    else if (k === 'ArrowUp') rotate(0, -s); else if (k === 'ArrowDown') rotate(0, s);
+    else if (k === 'q' || k === 'Q') rotate(0, 0, s); else if (k === 'e' || k === 'E') rotate(0, 0, -s);
+    else if (k === '+' || k === '=') setZoom(G.zoom * 1.2); else if (k === '-') setZoom(G.zoom / 1.2);
+    else if (k === ' ') toggleSpin(); else if (k === '0') resetGlobe(); else return;
+    e.preventDefault(); wake();
+  });
+  stage.querySelector('.globe__ui').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.g === 'spin') toggleSpin(); else if (b.dataset.g === 'in') setZoom(G.zoom * 1.25);
+    else if (b.dataset.g === 'out') setZoom(G.zoom / 1.25); else resetGlobe();
+  });
+  G.built = true;
+}
+
+function toggleSpin() { G.spin = !G.spin; G.ov.parentNode.querySelector('[data-g="spin"]').setAttribute('aria-pressed', String(G.spin)); wake(); }
+
+function labelGlobe() {
+  const ar = state.lang === 'ar', st = G.ov.parentNode, w = state.map === 'moon' ? (ar ? 'القمر' : 'Moon') : (ar ? 'المريخ' : 'Mars');
+  G.ov.setAttribute('aria-label', ar
+    ? `كرة ثلاثية الأبعاد لـ${w}. اسحب للتدوير، العجلة للتكبير، الأسهم من الكيبورد. المواقع في القايمة جنبها.`
+    : `3D globe of ${w}. Drag to rotate, scroll to zoom, arrow keys from the keyboard. All sites are also in the list beside it.`);
+  st.querySelector('.globe__hint').textContent = ar
+    ? `${w} · اسحب في أي اتجاه · عجلة أو قرصة للزوم · رسم توضيحي`
+    : `${w} · drag any direction · wheel or pinch to zoom · illustrative`;
+  const L = { spin: ar ? 'لف' : 'Spin', reset: ar ? 'إعادة' : 'Reset' };
+  st.querySelector('[data-g="spin"]').textContent = L.spin; st.querySelector('[data-g="reset"]').textContent = L.reset;
+  st.querySelector('[data-g="in"]').setAttribute('aria-label', ar ? 'تكبير' : 'Zoom in');
+  st.querySelector('[data-g="out"]').setAttribute('aria-label', ar ? 'تصغير' : 'Zoom out');
 }
 
 function renderMap() {
   const stage = byId('mapStage');
-  stage.innerHTML = state.map === 'moon' ? moonSVG() : marsSVG();
+  if (!G.built) buildGlobe(stage);
+  if (G.world !== state.map) {
+    if (!G.tex[state.map]) G.tex[state.map] = genTexture(state.map);
+    G.world = state.map; G.hover = null; G.vx = G.vy = 0; G.zoom = 1;
+    const s = START[state.map]; G.R = aim(s[0], s[1]);
+  }
+  stage.dataset.world = state.map;
+  labelGlobe(); wake();
 
   document.querySelectorAll('.map-tab').forEach((tab) => {
     const active = tab.dataset.map === state.map;
@@ -1003,6 +1161,348 @@ function renderStories() {
 /* --------------------------------------------------------------------------
    Artifact dialog
    -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   3D equipment models — simplified, procedurally built from boxes, cylinders,
+   bars and spheres, drawn on <canvas> with a small painter's-algorithm
+   renderer. Schematic shapes, not CAD or NASA models.
+   -------------------------------------------------------------------------- */
+const v3 = {
+  sub: (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]],
+  add: (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]],
+  mul: (a, k) => [a[0]*k, a[1]*k, a[2]*k],
+  cross: (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  nrm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; }
+};
+
+function Builder() {
+  const F = [];
+  const face = (vs, col, cen, ds, sp) => {
+    vs = vs.filter((p, i) => !i || p[0] !== vs[i-1][0] || p[1] !== vs[i-1][1] || p[2] !== vs[i-1][2]);
+    if (vs.length < 3) return;
+    let n = [0, 0, 0];
+    for (let i = 0; i < vs.length; i++) {
+      const a = vs[i], b = vs[(i + 1) % vs.length];
+      n[0] += (a[1]-b[1]) * (a[2]+b[2]); n[1] += (a[2]-b[2]) * (a[0]+b[0]); n[2] += (a[0]-b[0]) * (a[1]+b[1]);
+    }
+    n = v3.nrm(n);
+    const fc = v3.mul(vs.reduce((s, p) => v3.add(s, p), [0, 0, 0]), 1 / vs.length);
+    if (!ds && n[0]*(fc[0]-cen[0]) + n[1]*(fc[1]-cen[1]) + n[2]*(fc[2]-cen[2]) < 0) n = v3.mul(n, -1);
+    F.push({ v: vs, n, c: col, ds: !!ds, sp });
+  };
+  const box = (c, s, col, o = {}) => {
+    const h = s.map((x) => x / 2), P = [];
+    for (let i = 0; i < 8; i++) P.push([c[0] + (i & 1 ? h[0] : -h[0]), c[1] + (i & 2 ? h[1] : -h[1]), c[2] + (i & 4 ? h[2] : -h[2])]);
+    [[0,1,3,2], [4,5,7,6], [0,1,5,4], [2,3,7,6], [0,2,6,4], [1,3,7,5]].forEach((q) => face(q.map((i) => P[i]), col, c, 0, o.sp));
+  };
+  const cyl = (c, r, h, col, o = {}) => {
+    const n = o.seg || 12, r2 = o.r2 === undefined ? r : o.r2, ax = o.ax || 'y';
+    const m = (l) => { const p = ax === 'y' ? l : ax === 'x' ? [l[1], l[0], l[2]] : [l[0], l[2], l[1]]; return [c[0]+p[0], c[1]+p[1], c[2]+p[2]]; };
+    const B = [], T = [];
+    for (let i = 0; i < n; i++) { const a = i / n * 6.2832; B.push(m([r*Math.cos(a), -h/2, r*Math.sin(a)])); T.push(m([r2*Math.cos(a), h/2, r2*Math.sin(a)])); }
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n; face([B[i], B[j], T[j], T[i]], col, c, 0, o.sp); }
+    if (r > 0) face(B, col, c, 0, o.sp);
+    if (r2 > 0) face(T, col, c, 0, o.sp);
+  };
+  const bar = (p, q, r, col, o = {}) => {
+    const d = v3.nrm(v3.sub(q, p));
+    let u = v3.cross(d, [0, 1, 0]); if (Math.hypot(u[0], u[1], u[2]) < .1) u = v3.cross(d, [1, 0, 0]);
+    u = v3.mul(v3.nrm(u), r); const w = v3.mul(v3.nrm(v3.cross(d, u)), r);
+    const k = [[1,1], [-1,1], [-1,-1], [1,-1]];
+    const A = k.map(([a, b]) => v3.add(p, v3.add(v3.mul(u, a), v3.mul(w, b))));
+    const Z = k.map(([a, b]) => v3.add(q, v3.add(v3.mul(u, a), v3.mul(w, b))));
+    const c = v3.mul(v3.add(p, q), .5);
+    for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; face([A[i], A[j], Z[j], Z[i]], col, c, 0, o.sp); }
+    face(A, col, c, 0, o.sp); face(Z, col, c, 0, o.sp);
+  };
+  const sph = (c, r, col, o = {}) => {
+    const nl = o.lat || 5, nn = o.seg || 10;
+    const ring = (j) => { const a = Math.PI * j / nl, y = Math.cos(a), rr = Math.sin(a), pts = [];
+      for (let i = 0; i < nn; i++) { const b = i / nn * 6.2832; pts.push([c[0] + r*rr*Math.cos(b), c[1] + r*y, c[2] + r*rr*Math.sin(b)]); } return pts; };
+    let prev = ring(0);
+    for (let j = 1; j <= nl; j++) { const cur = ring(j); for (let i = 0; i < nn; i++) { const k = (i + 1) % nn; face([prev[i], prev[k], cur[k], cur[i]], col, c, 0); } prev = cur; }
+  };
+  const quad = (vs, col) => face(vs, col, [0, 0, 0], 1);
+
+  function done(groundCol) {
+    const all = F.flatMap((f) => f.v);
+    const lo = [0, 1, 2].map((i) => Math.min(...all.map((p) => p[i]))), hi = [0, 1, 2].map((i) => Math.max(...all.map((p) => p[i])));
+    const cx = (lo[0] + hi[0]) / 2, cy = (lo[1] + hi[1]) / 2, cz = (lo[2] + hi[2]) / 2;
+    F.forEach((f) => { f.v = f.v.map((p) => [p[0]-cx, p[1]-cy, p[2]-cz]); });
+    new Set(F.map((f) => f.sp).filter(Boolean)).forEach((s) => { s.x -= cx; s.z -= cz; });
+    const rad = Math.max(...F.flatMap((f) => f.v).map((p) => Math.hypot(p[0], p[1], p[2])));
+    const reach = Math.max(hi[0] - lo[0], hi[2] - lo[2]) / 2 * 1.12, gy = lo[1] - cy - .03, ground = [];
+    for (let i = 0; i < 32; i++) { const a = i / 32 * 6.2832; ground.push([reach * Math.cos(a), gy, reach * Math.sin(a)]); }
+    return { F, rad: Math.max(rad, reach), ground, gcol: groundCol, anim: F.some((f) => f.sp) };
+  }
+  return { box, cyl, bar, sph, quad, done };
+}
+
+const MC = { gold: [205,165,78], silv: [196,202,210], dark: [66,70,80], gray: [140,144,152], blue: [40,72,140], dust: [112,92,84], white: [236,236,240] };
+const MODELS = {};
+
+MODELS['apollo-lm'] = (b) => {
+  b.cyl([0, 0, 0], 2.1, 1.5, MC.gold, { seg: 8 });
+  b.cyl([0, -1.1, 0], .9, .75, MC.dark, { r2: .35, seg: 14 });
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    b.bar([sx*1.5, -.5, sz*1.5], [sx*3.3, -1.9, sz*3.3], .07, MC.silv);
+    b.bar([sx*1.5, .2, sz*1.5], [sx*2.6, -1.2, sz*2.6], .05, MC.gray);
+    b.cyl([sx*3.3, -1.95, sz*3.3], .5, .1, MC.silv, { seg: 10 });
+  }
+  b.bar([-.25, .1, 2.1], [-.25, -1.9, 2.9], .035, MC.silv); b.bar([.25, .1, 2.1], [.25, -1.9, 2.9], .035, MC.silv);
+  for (let i = 0; i < 4; i++) b.bar([-.25, -.1 - i*.5, 2.2 + i*.17], [.25, -.1 - i*.5, 2.2 + i*.17], .03, MC.silv);
+};
+
+MODELS.lrv = (b) => {
+  b.box([0, 0, 0], [1.5, .18, 2.8], MC.silv);
+  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+    b.cyl([x*1.05, -.25, z], .42, .2, MC.dark, { ax: 'x', seg: 14 });
+    b.cyl([x*1.05, -.25, z], .2, .24, MC.gray, { ax: 'x', seg: 10 });
+    b.bar([x*.75, -.05, z], [x*1.0, -.25, z], .05, MC.gray);
+  }
+  for (const x of [-.35, .35]) { b.box([x, .38, -.15], [.5, .1, .5], MC.gray); b.box([x, .7, -.42], [.5, .55, .08], MC.gray); }
+  b.box([0, .4, .85], [.7, .35, .16], MC.dark);
+  b.bar([0, .5, .85], [0, 1.0, 1.0], .03, MC.silv);
+  b.bar([.7, .1, -1.2], [.7, 1.55, -1.2], .04, MC.silv);
+  b.cyl([.7, 1.7, -1.2], .05, .3, MC.silv, { r2: .55, seg: 14 });
+  b.box([-.6, .3, 1.3], [.3, .25, .35], MC.gold); b.box([0, .25, -1.2], [1.1, .35, .35], MC.gold);
+};
+
+MODELS.alsep = (b) => {
+  b.box([0, 0, 0], [.9, .4, .7], MC.gold);
+  b.bar([.3, .2, 0], [.3, 1.7, 0], .04, MC.silv);
+  b.cyl([.3, 1.85, 0], .05, .3, MC.silv, { r2: .5, seg: 14 });
+  b.cyl([2.2, .45, .2], .28, 1.1, MC.dark, { seg: 10 });
+  for (const y of [.1, .35, .6, .85]) b.cyl([2.2, y, .2], .4, .04, MC.gray, { seg: 12 });
+  b.bar([.45, .1, .05], [1.9, .1, .2], .03, MC.dark);
+  b.sph([-1.8, .2, .6], .34, MC.gold, { lat: 4 });
+  b.bar([-.45, .1, .2], [-1.5, .1, .5], .02, MC.dark);
+  b.box([-1.0, -.12, -1.5], [1.0, .06, .7], MC.silv);
+  b.box([1.5, -.1, 1.6], [.5, .08, .4], MC.gray);
+};
+
+MODELS.surveyor = (b) => {
+  b.cyl([0, .75, 0], .55, .28, MC.silv, { seg: 3 });
+  for (let k = 0; k < 3; k++) {
+    const x = Math.cos(k * 2.0944), z = Math.sin(k * 2.0944);
+    b.bar([x*.45, .7, z*.45], [x*1.8, -.85, z*1.8], .05, MC.silv);
+    b.cyl([x*1.85, -.9, z*1.85], .32, .08, MC.gray, { seg: 10 });
+  }
+  b.bar([0, .9, 0], [0, 2.1, 0], .05, MC.silv);
+  b.box([0, 2.2, 0], [1.2, .05, .85], MC.blue);
+  b.box([0, 1.55, 0], [.2, .2, .3], MC.dark);
+  b.sph([.4, 1.0, -.3], .26, MC.gold); b.sph([-.35, 1.0, .25], .22, MC.white);
+  b.bar([.35, .6, .35], [1.1, .2, 1.1], .03, MC.dark); b.box([1.2, .15, 1.2], [.18, .1, .22], MC.gray);
+};
+
+MODELS.viking1 = (b) => {
+  b.cyl([0, .9, 0], 1.25, .55, MC.silv, { seg: 6 });
+  for (let k = 0; k < 3; k++) {
+    const a = 1.5708 + k * 2.0944, x = Math.cos(a), z = Math.sin(a);
+    b.bar([x*1.0, .75, z*1.0], [x*2.4, -.3, z*2.4], .07, MC.gray);
+    b.cyl([x*2.4, -.38, z*2.4], .35, .08, MC.silv, { seg: 10 });
+  }
+  b.box([-.75, 1.35, -.75], [.55, .4, .7], MC.dark); b.box([.75, 1.35, -.75], [.55, .4, .7], MC.dark);
+  b.bar([.6, 1.15, .5], [.6, 2.0, .5], .04, MC.silv); b.box([.6, 2.1, .5], [.32, .18, .18], MC.gray);
+  b.bar([-.4, 1.15, .3], [-.4, 1.9, .3], .04, MC.silv); b.cyl([-.4, 2.0, .3], .05, .15, MC.silv, { r2: .45, seg: 14 });
+  b.bar([-1.1, 1.0, .5], [-2.4, .9, 1.4], .03, MC.gold); b.box([-2.5, .8, 1.5], [.2, .12, .25], MC.gray);
+  b.box([.9, 1.25, .6], [.4, .3, .5], MC.gold);
+};
+MODELS.viking2 = MODELS.viking1;
+
+MODELS.pathfinder = (b) => {
+  const R = 1.2, V = [0, 1, 2].map((k) => [R * Math.cos(k * 2.0944), 0, R * Math.sin(k * 2.0944)]);
+  const at = (p, t) => [p[0] * (1 + t), -.7 * t + .02, p[2] * (1 + t)];
+  b.cyl([0, -.05, 0], R, .1, MC.gold, { seg: 3 });
+  for (let k = 0; k < 3; k++) {
+    const p = V[k], q = V[(k + 1) % 3];
+    b.quad([p, q, at(q, 1), at(p, 1)], MC.gold);
+    b.quad([at(p, .15), at(q, .15), at(q, .88), at(p, .88)], MC.blue);
+  }
+  b.bar([0, .05, 0], [0, 1.2, 0], .04, MC.silv); b.box([0, 1.3, 0], [.45, .16, .16], MC.dark);
+  b.bar([.3, .1, .3], [.3, .8, .3], .03, MC.silv); b.cyl([.3, .9, .3], .05, .1, MC.silv, { r2: .3, seg: 10 });
+};
+
+MODELS.sojourner = (b) => {
+  b.box([0, .2, 0], [.48, .2, .65], MC.gold); b.box([0, .33, 0], [.5, .03, .67], MC.blue);
+  for (const x of [-1, 1]) for (const z of [-.25, 0, .25]) {
+    b.cyl([x*.3, 0, z], .13, .09, MC.dark, { ax: 'x', seg: 12 });
+    b.bar([x*.3, 0, z], [x*.24, .17, z*.4], .02, MC.silv);
+  }
+  b.bar([.2, .35, -.22], [.2, .75, -.22], .012, MC.silv); b.box([0, .08, -.4], [.12, .09, .1], MC.dark);
+};
+
+const merRover = (b, panel) => {
+  b.box([0, .55, 0], [1.3, .42, 1.6], MC.gold); b.box([0, .82, 0], [1.7, .05, 1.5], panel);
+  for (const x of [-1, 1]) for (const z of [-.8, 0, .8]) {
+    b.cyl([x*1.0, .26, z], .26, .2, MC.dark, { ax: 'x', seg: 14 });
+    b.bar([x*1.0, .26, z], [x*.8, .55, z*.5], .05, MC.silv);
+  }
+  b.bar([0, .85, .5], [0, 1.65, .5], .04, MC.silv); b.box([0, 1.75, .5], [.38, .14, .14], MC.dark);
+  b.bar([-.5, .85, -.5], [-.5, 1.15, -.5], .03, MC.silv); b.cyl([-.5, 1.25, -.5], .05, .16, MC.silv, { r2: .3, seg: 12 });
+  b.bar([.5, .85, -.55], [.5, 1.4, -.55], .025, MC.silv);
+  b.bar([0, .5, .8], [.15, .35, 1.35], .05, MC.gray); b.cyl([.15, .3, 1.45], .16, .2, MC.dark, { ax: 'z', seg: 8 });
+};
+MODELS.spirit = (b) => merRover(b, MC.blue);
+MODELS.opportunity = (b) => merRover(b, MC.dust);
+
+MODELS.phoenix = (b) => {
+  b.cyl([0, 1.0, 0], 1.1, .14, MC.silv, { seg: 10 });
+  b.cyl([-2.1, 1.1, 0], .95, .04, MC.blue, { seg: 24 }); b.cyl([2.1, 1.1, 0], .95, .04, MC.blue, { seg: 24 });
+  b.bar([-1.1, 1.05, 0], [-1.2, 1.1, 0], .04, MC.silv); b.bar([1.1, 1.05, 0], [1.2, 1.1, 0], .04, MC.silv);
+  for (let k = 0; k < 3; k++) {
+    const a = 1.5708 + k * 2.0944, x = Math.cos(a), z = Math.sin(a);
+    b.bar([x*.9, .95, z*.9], [x*1.8, -.1, z*1.8], .06, MC.gray); b.cyl([x*1.8, -.14, z*1.8], .3, .06, MC.silv, { seg: 10 });
+  }
+  b.bar([-.5, 1.15, .6], [-1.0, 1.8, 1.3], .05, MC.gray); b.bar([-1.0, 1.8, 1.3], [-1.6, .6, 2.0], .05, MC.gray);
+  b.box([-1.7, .45, 2.1], [.22, .15, .28], MC.silv);
+  b.bar([.6, 1.1, -.5], [.6, 2.2, -.5], .03, MC.silv); b.box([.6, 2.3, -.5], [.35, .16, .16], MC.dark);
+  b.box([.3, 1.2, .4], [.4, .28, .4], MC.gold); b.box([-.1, 1.2, -.2], [.35, .25, .35], MC.gray);
+};
+
+MODELS.insight = (b) => {
+  b.cyl([0, .9, 0], 1.0, .16, MC.silv, { seg: 8 });
+  b.cyl([-2.2, 1.05, 0], 1.05, .03, MC.blue, { seg: 24 }); b.cyl([2.2, 1.05, 0], 1.05, .03, MC.blue, { seg: 24 });
+  b.bar([-1.0, .95, 0], [-1.15, 1.02, 0], .04, MC.silv); b.bar([1.0, .95, 0], [1.15, 1.02, 0], .04, MC.silv);
+  for (let k = 0; k < 3; k++) {
+    const a = 1.5708 + k * 2.0944, x = Math.cos(a), z = Math.sin(a);
+    b.bar([x*.8, .8, z*.8], [x*1.7, -.1, z*1.7], .06, MC.gray); b.cyl([x*1.7, -.14, z*1.7], .3, .06, MC.silv, { seg: 10 });
+  }
+  b.bar([.5, 1.05, .4], [.9, 1.6, 1.1], .04, MC.gray); b.bar([.9, 1.6, 1.1], [1.2, .5, 1.6], .04, MC.gray);
+  b.cyl([-.3, .2, 2.0], .8, .4, MC.gold, { r2: .6, seg: 16 }); b.sph([-.3, .42, 2.0], .38, MC.silv, { lat: 4 });
+  b.cyl([1.3, .2, 1.8], .3, .4, MC.dark, { seg: 8 });
+  b.bar([0, 1.0, -.6], [0, 1.8, -.6], .03, MC.silv); b.cyl([0, 1.9, -.6], .05, .1, MC.silv, { r2: .3, seg: 10 });
+};
+
+MODELS.ingenuity = (b) => {
+  const r1 = { x: 0, z: 0, w: 14 }, r2 = { x: 0, z: 0, w: -14 };
+  b.box([0, .55, 0], [.2, .3, .2], MC.gold); b.bar([0, .7, 0], [0, .98, 0], .025, MC.dark);
+  b.box([0, 1.05, 0], [.55, .025, .4], MC.blue);
+  b.box([0, .8, 0], [1.2, .012, .07], MC.dark, { sp: r1 }); b.box([0, .9, 0], [1.2, .012, .07], MC.silv, { sp: r2 });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.bar([sx*.1, .42, sz*.1], [sx*.5, -.1, sz*.5], .018, MC.dark);
+  b.box([0, .4, .12], [.08, .08, .06], MC.dark);
+};
+
+const MODEL_WORLD = { moon: [96, 100, 108], mars: [122, 68, 48] };
+const MV = { raf: 0, ro: null, io: null, S: null };
+
+function unmountModel() {
+  if (MV.raf) cancelAnimationFrame(MV.raf);
+  if (MV.ro) MV.ro.disconnect();
+  if (MV.io) MV.io.disconnect();
+  MV.raf = 0; MV.ro = MV.io = MV.S = null;
+}
+
+function modelHTML(ar) {
+  return `<div class="dlg-model">
+    <h4>${ar ? 'مجسم ثلاثي الأبعاد' : '3D model'}</h4>
+    <div class="model-stage">
+      <canvas id="modelCanvas" tabindex="0" role="application"
+        aria-label="${ar ? 'مجسم ثلاثي الأبعاد مبسّط. اسحب للتدوير، الأسهم من الكيبورد.' : 'Simplified 3D model. Drag to rotate, arrow keys from the keyboard.'}"></canvas>
+      <div class="model-ui" role="group">
+        <button type="button" data-m="spin" aria-pressed="true">${ar ? 'لف' : 'Spin'}</button>
+        <button type="button" data-m="in" aria-label="${ar ? 'تكبير' : 'Zoom in'}">+</button>
+        <button type="button" data-m="out" aria-label="${ar ? 'تصغير' : 'Zoom out'}">−</button>
+        <button type="button" data-m="reset">${ar ? 'إعادة' : 'Reset'}</button>
+      </div>
+    </div>
+    <p class="model-note">${ar ? 'اسحب في أي اتجاه · اضغط على المجسم ثم استخدم العجلة للزوم، أو اقرص بإصبعين · شكل مبسّط توضيحي، مش نموذج هندسي رسمي.'
+      : 'Drag any direction · click the model, then use the wheel to zoom, or pinch · a simplified illustration, not an official engineering model.'}</p>
+  </div>`;
+}
+
+function mountModel(a) {
+  unmountModel();
+  const cv = byId('modelCanvas');
+  if (!cv || !MODELS[a.id]) { const m = document.querySelector('.dlg-model'); if (m) m.remove(); return; }
+  const b = Builder(); MODELS[a.id](b);
+  const mdl = b.done(MODEL_WORLD[a.world]);
+  const home = () => orthonormal(mmul(rotX(.5), rotY(-.7)));
+  const S = { R: home(), zoom: 1, spin: !globeReduce, down: false, vx: 0, vy: 0, vis: true, last: 0, t: 0, dpr: Math.min(window.devicePixelRatio || 1, 2) };
+  MV.S = S;
+  const ctx = cv.getContext('2d');
+  const L = v3.nrm([-.4, .6, .7]);
+
+  const wake = () => { if (!MV.raf && S.vis) MV.raf = requestAnimationFrame(tick); };
+  const fit = () => { const r = cv.getBoundingClientRect(); cv.width = Math.round(r.width * S.dpr) || 300; cv.height = Math.round(r.height * S.dpr) || 300; wake(); };
+
+  function draw() {
+    const W = cv.width, H = cv.height, R = S.R, sc = Math.min(W, H) * .52 * S.zoom / mdl.rad;
+    ctx.clearRect(0, 0, W, H);
+    const tr = (p, sp) => {
+      let x = p[0], y = p[1], z = p[2];
+      if (sp) { const g = sp.w * S.t, c = Math.cos(g), s = Math.sin(g), dx = x - sp.x, dz = z - sp.z; x = sp.x + dx*c + dz*s; z = sp.z - dx*s + dz*c; }
+      return [R[0]*x + R[1]*y + R[2]*z, R[3]*x + R[4]*y + R[5]*z, R[6]*x + R[7]*y + R[8]*z];
+    };
+    const px = (q) => [W/2 + q[0] * sc, H/2 - q[1] * sc];
+    const poly = (pts, fill, stroke) => {
+      ctx.beginPath(); pts.forEach((q, i) => { const [X, Y] = px(q); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.closePath();
+      ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = S.dpr * .7; ctx.stroke(); }
+    };
+    const g = mdl.gcol, above = R[7] > 0;
+    const drawGround = () => poly(mdl.ground.map((p) => tr(p)), `rgba(${g[0]},${g[1]},${g[2]},.55)`, 'rgba(255,255,255,.12)');
+    if (above) drawGround();
+    const list = [];
+    for (const f of mdl.F) {
+      let n = f.n;
+      if (f.sp) { const gg = f.sp.w * S.t, c = Math.cos(gg), s = Math.sin(gg); n = [n[0]*c + n[2]*s, n[1], -n[0]*s + n[2]*c]; }
+      const nz = R[6]*n[0] + R[7]*n[1] + R[8]*n[2];
+      if (!f.ds && nz <= 0) continue;
+      const q = f.v.map((p) => tr(p, f.sp));
+      list.push({ f, q, z: q.reduce((s, p) => s + p[2], 0) / q.length, n: [R[0]*n[0] + R[1]*n[1] + R[2]*n[2], R[3]*n[0] + R[4]*n[1] + R[5]*n[2], nz] });
+    }
+    list.sort((a, b2) => a.z - b2.z);
+    for (const it of list) {
+      const d = it.n[0]*L[0] + it.n[1]*L[1] + it.n[2]*L[2], sh = .3 + .7 * (it.f.ds ? Math.abs(d) : Math.max(0, d)), c = it.f.c;
+      poly(it.q, `rgb(${c[0]*sh|0},${c[1]*sh|0},${c[2]*sh|0})`, 'rgba(0,0,0,.28)');
+    }
+    if (!above) drawGround();
+  }
+
+  function tick(ts) {
+    MV.raf = 0; if (!S.vis) return;
+    const dt = Math.min(.05, (ts - S.last) / 1000 || .016); S.last = ts; S.t += dt;
+    let busy = mdl.anim;
+    if (!S.down) {
+      if (Math.abs(S.vx) + Math.abs(S.vy) > .0004) { S.R = orthonormal(mmul(mmul(rotX(S.vy), rotY(S.vx)), S.R)); S.vx *= .94; S.vy *= .94; busy = true; }
+      else if (S.spin) { S.R = orthonormal(mmul(rotY(.5 * dt), S.R)); busy = true; }
+    }
+    draw(); if (busy) wake();
+  }
+  const rot = (ty, tx, tz) => { S.R = orthonormal(mmul(mmul(rotX(tx), mmul(rotY(ty), rotZ(tz || 0))), S.R)); wake(); };
+  const zoom = (z) => { S.zoom = Math.max(.6, Math.min(3.2, z)); wake(); };
+  const setSpin = () => { S.spin = !S.spin; cv.parentNode.querySelector('[data-m="spin"]').setAttribute('aria-pressed', String(S.spin)); wake(); };
+
+  const ptr = new Map(); let moved = 0, prev = null;
+  const pair = () => { const [p, q] = [...ptr.values()]; return { d: Math.hypot(p.x - q.x, p.y - q.y), ang: Math.atan2(q.y - p.y, q.x - p.x) }; };
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); cv.focus({ preventScroll: true }); ptr.set(e.pointerId, { x: e.clientX, y: e.clientY }); S.down = true; S.vx = S.vy = 0; moved = 0; prev = ptr.size === 2 ? pair() : null; });
+  cv.addEventListener('pointermove', (e) => {
+    const p = ptr.get(e.pointerId); if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y, r = cv.getBoundingClientRect().width * .4 * S.zoom; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+    if (ptr.size === 1) { S.vx = dx / r; S.vy = dy / r; rot(S.vx, S.vy); }
+    else if (ptr.size === 2) { const n = pair(); if (prev) { zoom(S.zoom * n.d / prev.d); rot(0, 0, -(n.ang - prev.ang)); } prev = n; }
+  });
+  const end = (e) => { ptr.delete(e.pointerId); prev = null; if (!ptr.size) { S.down = false; if (globeReduce) S.vx = S.vy = 0; } wake(); };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', (e) => { if (document.activeElement !== cv) return; e.preventDefault(); zoom(S.zoom * Math.exp(-e.deltaY * .0015)); }, { passive: false });
+  cv.addEventListener('keydown', (e) => {
+    const k = e.key, s = .14;
+    if (k === 'ArrowLeft') rot(-s, 0); else if (k === 'ArrowRight') rot(s, 0); else if (k === 'ArrowUp') rot(0, -s); else if (k === 'ArrowDown') rot(0, s);
+    else if (k === 'q' || k === 'Q') rot(0, 0, s); else if (k === 'e' || k === 'E') rot(0, 0, -s);
+    else if (k === '+' || k === '=') zoom(S.zoom * 1.2); else if (k === '-') zoom(S.zoom / 1.2);
+    else if (k === ' ') setSpin(); else if (k === '0') { S.R = home(); S.zoom = 1; wake(); } else return;
+    e.preventDefault();
+  });
+  cv.parentNode.querySelector('.model-ui').addEventListener('click', (e) => {
+    const bt = e.target.closest('button'); if (!bt) return;
+    const m = bt.dataset.m;
+    if (m === 'spin') setSpin(); else if (m === 'in') zoom(S.zoom * 1.25); else if (m === 'out') zoom(S.zoom / 1.25); else { S.R = home(); S.zoom = 1; S.vx = S.vy = 0; wake(); }
+  });
+  MV.ro = new ResizeObserver(fit); MV.ro.observe(cv);
+  MV.io = new IntersectionObserver((en) => { S.vis = en[0].isIntersecting; if (S.vis) wake(); }); MV.io.observe(cv);
+  fit();
+  if (!byId('artifactDialog').dataset.mvBound) { byId('artifactDialog').dataset.mvBound = '1'; byId('artifactDialog').addEventListener('close', unmountModel); }
+}
+
 function sectionHTML(label, body) {
   return `<div class="dlg-section"><h4>${label}</h4><p>${esc(body)}</p></div>`;
 }
@@ -1044,6 +1544,8 @@ function renderDialog(idx) {
         <p><strong>${ar ? 'حقيقة سريعة' : 'Fast fact'}</strong>${esc(t(a.fact))}</p>
       </div>
 
+      ${modelHTML(ar)}
+
       <a class="dlg-source" href="${a.source.url}" target="_blank" rel="noopener noreferrer">
         ${esc(a.source.label)}
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -1057,6 +1559,7 @@ function renderDialog(idx) {
   const shell = dlg.querySelector('.dialog__shell');
   if (shell) shell.scrollTop = 0;
   attachImageFallbacks();
+  mountModel(a);
 }
 
 function openArtifact(id) {
@@ -1139,24 +1642,9 @@ function initEvents() {
     openArtifact(card.dataset.id);
   });
 
-  const stage = byId('mapStage');
-
-  stage.addEventListener('click', (e) => {
-    const marker = e.target.closest('.marker');
-    if (marker) openArtifact(marker.dataset.id);
-  });
-
-  stage.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const marker = e.target.closest('.marker');
-    if (!marker) return;
-    e.preventDefault();
-    openArtifact(marker.dataset.id);
-  });
-
   byId('mapSites').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-id]');
-    if (btn) openArtifact(btn.dataset.id);
+    if (btn) { focusArtifact(btn.dataset.id); openArtifact(btn.dataset.id); }
   });
 
   document.querySelectorAll('.map-tab').forEach((tab) => {
